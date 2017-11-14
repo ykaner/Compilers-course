@@ -57,18 +57,9 @@ public:
 
 
 class Variable {
-	// Think! what does a Variable contain?
 	string type;
 	string name;
-	// int addres;
-	int size;
 public:
-	Variable(string type, string name, int addres, int size) {
-		this->type = type;
-		this->name = name;
-		// this->addres = addres;
-		this->size = size;
-	}
 	Variable(string type, string name) {
 		this->type = type;
 		this->name = name;
@@ -86,6 +77,15 @@ public:
 
 		return new Variable(type, name);
 	}
+	
+	string getType() {
+		return this->type;
+	}
+
+	string getName() {
+		return this->name;
+	}
+
 };
 
 
@@ -129,6 +129,19 @@ public:
 		
 		return * new SymbolTable(vars, addrs, sizes);
 	}
+
+	const vector<Variable>& getVars() {
+		return this->vars;
+	}
+
+	const vector<int>& getAddrs() {
+		return this->addrs;
+	}
+
+	const vector<int>& getSizes() {
+		return this->sizes;
+	}
+
 };
 
 void generatePCode(AST* ast, SymbolTable symbolTable) {
@@ -142,6 +155,18 @@ ostream& operator<<(ostream& out, AST* ast) {
 	out << ast->_value << " ( " << ast->_left << " ,  " << ast->_right << " )";
 }
 
+static ostream& operator<<(ostream& out, Variable var) {
+	out << var.getType() << " " << var.getName();
+	return out;
+}
+
+static ostream& operator<<(ostream& out, SymbolTable table) {
+	for (int i = 0; i < table.getVars().size(); i++) {
+		out << table.getVars()[i] << " , " << table.getAddrs()[i] << " , " << table.getSizes()[i] << endl;
+	}
+	return out;
+}
+
 
 int main()
 {
@@ -151,9 +176,10 @@ int main()
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);
-		cout << ast;
+		cout << ast << endl;
 		myfile.close();
 		symbolTable = SymbolTable::generateSymbolTable(ast);
+		cout << symbolTable;
 		generatePCode(ast, symbolTable);
 	}
 	else cout << "Unable to open file";
