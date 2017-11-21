@@ -3,17 +3,51 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 using namespace std;
+
+
+template<class T>
+int find(vector<T> list, T x) {
+	for (int i = 0; i < list.size(); i++) {
+		if (list[i] == x) return i;
+	}
+	return -1;
+}
+
+template<class T>
+ostream& operator<<(ostream& out, vector<T>& list) {
+	for (int i = 0; i < list.size(); i++) {
+		out << i << ": " << list[i] << ", ";
+	}
+	out << endl;
+	return out;
+}
+
 
 // Abstract Syntax Tree
 class AST
 {
-public:
+private:
 
 	string _value;
 	AST* _left; // can be null
 	AST* _right; // can be null
+
+public:
+
+	string getValue() {
+		return _value;
+	}
+
+	AST* getLeft() {
+		return _left;
+	}
+
+	AST* getRight() {
+		return _right;
+	}
 
 public:
 
@@ -37,16 +71,25 @@ public:
 
 
 	vector<AST *> getByValue(string value) {
-		if (this == nullptr)
+		if (this == nullptr) {
 			return vector<AST *>();
-		if (this->_value == value)
-			return vector<AST *>(1, this);
+		}
+		if (this->_value == value) {
+			vector<AST *> res;
+			res.push_back(this);
+			return res;
+		}
 
 		vector<AST *> lefts = this->_left->getByValue(value);
 		vector<AST *> rights = this->_right->getByValue(value);
 		
-		vector<AST *> res(lefts.size() + rights.size());
-		set_union(lefts.begin(), lefts.end(), rights.begin(), rights.end(), res.begin());
+		vector<AST *> res;
+		for (auto i : lefts) {
+			res.push_back(i);
+		}
+		for (auto i : rights) {
+			res.push_back(i);
+		}
 		
 		return res;
 	}
@@ -65,15 +108,15 @@ public:
 		this->name = name;
 	}
 	static Variable* creatVar(AST* ast) {
-		if (ast->_value != "var"){
+		if (ast->getValue() != "var"){
 			return nullptr;
 		}
-		if (ast->_left == nullptr || ast->_left->_value != "identifier" ||
-			ast->_left->_left == nullptr) return nullptr;
-		string name = ast->_left->_left->_value;
-		if (ast->_right == nullptr)
+		if (ast->getLeft() == nullptr || ast->getLeft()->getValue() != "identifier" ||
+			ast->getLeft()->getLeft() == nullptr) return nullptr;
+		string name = ast->getLeft()->getLeft()->getValue();
+		if (ast->getRight() == nullptr)
 			return nullptr;
-		string type = ast->_right->_value;
+		string type = ast->getRight()->getValue();
 
 		return new Variable(type, name);
 	}
@@ -86,6 +129,12 @@ public:
 		return this->name;
 	}
 
+
+
+	bool operator==(Variable other) {
+		return this->name == other.name;
+	}
+
 };
 
 
@@ -93,10 +142,26 @@ int getSize(Variable var) {
 	return 1; // TODO: genralize!
 }
 
+
+
 class SymbolTable {
 	vector<Variable> vars;
 	vector<int> addrs;
 	vector<int> sizes;
+
+public:
+
+	const vector<Variable>& getVars() {
+		return this->vars;
+	}
+
+	const vector<int>& getAddrs() {
+		return this->addrs;
+	}
+
+	const vector<int>& getSizes() {
+		return this->sizes;
+	}
 
 public:
 
@@ -130,29 +195,197 @@ public:
 		return * new SymbolTable(vars, addrs, sizes);
 	}
 
-	const vector<Variable>& getVars() {
-		return this->vars;
-	}
-
-	const vector<int>& getAddrs() {
-		return this->addrs;
-	}
-
-	const vector<int>& getSizes() {
-		return this->sizes;
+	int addrOfVar(string name) {
+		int idx = find(this->vars, Variable("NoneType", name));
+		return this->addrs[idx];
 	}
 
 };
 
-void generatePCode(AST* ast, SymbolTable symbolTable) {
-	// TODO: go over AST and print code
+
+
+
+
+//the types:
+//0: helper
+//1: unOp
+//2: binOp
+//3: scope
+vector<vector<string>> types = {
+	{
+		"statementsList",
+		"content",
+		"program"
+	},
+	{
+		"identifier",
+		"constInt",
+		"constReal",
+		"false",
+		"true",
+		"not",
+		"negative",
+		"print"
+	},
+	{
+		"plus",
+		"minus",
+		"multiply",
+		"divide",
+		"assignment",
+		"and",
+		"or",
+		"lessOrEquals",
+		"greaterOrEquals",
+		"greaterThan",
+		"lessThan",
+		"equals",
+		"notEquals",
+	},
+	{
+		"if",
+		"while"
+	}
+};
+
+map<string, string> opTable = {
+	{ "plus", "add" },
+	{ "minus", "sub" },
+	{ "multiply", "mul" },
+	{ "divide", "div" },
+	{"assignment", "sto"},
+	{ "negative", "neg" },
+	{ "and", "and" },
+	{ "or", "or" },
+	{ "lessOrEquals", "leq" },
+	{ "greaterOrEquals", "geq" },
+	{ "greaterThan", "grt" },
+	{ "lessThan", "les" },
+	{ "equals", "equ" },
+	{ "notEquals", "neq" },
+	{ "not", "not" },
+
+	{ "print", "print" },
+	{ "true", "ldc 1" },
+	{ "false", "ldc 0" }
+
+};
+
+
+int getType(AST *ast) {
+	string value = ast->getValue();
+
+
+	for (int i = 0; i < types.size(); i++) {
+		if (find(types[i], value) != -1) return i;
+	}
+	return -1;
+}
+
+
+int lbl_i = 0;
+
+void generatePCode(AST* ast, SymbolTable st) {
+
+	if (ast == nullptr)
+		return;
+
+	int type = getType(ast);
+	string value = ast->getValue();
+	switch (type){
+	case 0:
+		generatePCode(ast->getLeft(), st);
+		generatePCode(ast->getRight(), st);
+		break;
+	case 1:
+		if (value == "constInt" || value == "constReal") {
+			cout << "ldc " << ast->getLeft()->getValue() << endl;
+			break;
+		}
+		if (value == "identifier") {
+			cout << "ldc " << st.addrOfVar(ast->getLeft()->getValue()) << endl;
+			break;
+		}
+		else {
+			generatePCode(ast->getLeft(), st);
+			if (value == "print" && ast->getLeft()->getValue() == "identifier") {
+				cout << "ind" << endl;
+			}
+			cout << opTable[value] << endl;
+		}
+
+
+		break;
+	case 2:
+		if (ast->getLeft() != nullptr) {
+			generatePCode(ast->getLeft(), st);
+			if (ast->getLeft()->getValue() == "identifier" && ast->getValue() != "assignment") {
+				cout << "ind" << endl;
+			}
+		}
+		if (ast->getRight() != nullptr) {
+			generatePCode(ast->getRight(), st);
+			if (ast->getRight()->getValue() == "identifier" && ast->getValue() != "assignment") {
+				cout << "ind" << endl;
+			}
+		}
+
+		cout << opTable[value] << endl;
+		break;
+	case 3:
+		bool isElse = ast->getRight() != nullptr && ast->getRight()->getValue() == "else";
+		string start_lbl, else_lbl, end_lbl;
+
+		if (value == "while") {
+			start_lbl = "L" + to_string(lbl_i);
+			lbl_i++;
+			end_lbl = "L" + to_string(lbl_i);
+			lbl_i++;
+
+			cout << start_lbl << ":" << endl;
+
+			generatePCode(ast->getLeft(), st);
+			cout << "fjp " << end_lbl << endl;
+			generatePCode(ast->getRight(), st);
+			cout << "ujp " << start_lbl << endl;
+			cout << end_lbl << ":" << endl;
+			break;
+		}
+		if (value == "if" && !isElse) {
+			end_lbl = "L" + to_string(lbl_i);
+			lbl_i++;
+
+			generatePCode(ast->getLeft(), st);
+			cout << "fjp " << end_lbl << endl;
+			generatePCode(ast->getRight(), st);
+			cout << end_lbl << ":" << endl;
+			break;
+		}
+		if (value == "if" && isElse) {
+			else_lbl = "L" + to_string(lbl_i);
+			lbl_i++;
+			end_lbl = "L" + to_string(lbl_i);
+			lbl_i++;
+			
+			generatePCode(ast->getLeft(), st);
+			cout << "fjp " << else_lbl << endl;
+			generatePCode(ast->getRight()->getLeft(), st);
+			cout << "ujp " << end_lbl << endl;
+			cout << else_lbl << ":" << endl;
+			generatePCode(ast->getRight()->getRight(), st);
+			cout << end_lbl << ":" << endl;
+			break;
+		}
+		break;
+	}
+
 }
 
 
 ostream& operator<<(ostream& out, AST* ast) {
 	if (ast == nullptr)
 		return out;
-	out << ast->_value << " ( " << ast->_left << " ,  " << ast->_right << " )";
+	return out << ast->getValue() << " ( " << ast->getLeft() << " ,  " << ast->getRight() << " )";
 }
 
 static ostream& operator<<(ostream& out, Variable var) {
@@ -172,18 +405,15 @@ int main()
 {
 	AST* ast;
 	SymbolTable symbolTable;
-	ifstream myfile("C:/Users/ykane/Downloads/SamplesTxt/tree5.txt");
+	ifstream myfile("C:/Users/ykane/Downloads/SamplesTxt/tree8.txt");
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);
-		cout << ast << endl;
 		myfile.close();
 		symbolTable = SymbolTable::generateSymbolTable(ast);
-		cout << symbolTable;
 		generatePCode(ast, symbolTable);
 	}
 	else cout << "Unable to open file";
 
-	cin.get();
 	return 0;
 }
