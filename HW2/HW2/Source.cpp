@@ -4,13 +4,14 @@
 #include <vector>
 #include <algorithm>
 #include <map>
-
+#include <set>
+#include <numeric>
 
 
 using namespace std;
 
 
-template<class T>
+/*template<class T>
 int find(vector<T> list, T x) {
 	for (int i = 0; i < list.size(); i++) {
 		if (list[i] == x) return i;
@@ -26,7 +27,13 @@ ostream& operator<<(ostream& out, vector<T>& list) {
 	out << endl;
 	return out;
 }
+*/
 
+
+/***********class declarations***************/
+class AST;
+class SymbolTable;
+class Variable;
 
 
 // Abstract Syntax Tree
@@ -100,29 +107,47 @@ public:
 };
 
 
+int size_of(string  type) {
+	return 1; // TODO: genralize!
+}
 
 
 class Variable {
+public:
 	string type;
 	string name;
+	int addr;
+	int size;
+
+	//array stuff:
+	vector<pair<int, int> > dimsList;
+	vector<int> lenList;
+	int subpart;
+
 public:
-	Variable(string type, string name) {
+	Variable()//:type("None"), name("None"), size(0), addr(-1)
+	{
+
+	}
+
+	Variable(string type, string name, int addr, int size) {
 		this->type = type;
 		this->name = name;
+		this->addr = addr;
+		this->size = size;
 	}
-	static Variable* creatVar(AST* ast) {
-		if (ast->getValue() != "var") {
-			return nullptr;
-		}
-		if (ast->getLeft() == nullptr || ast->getLeft()->getValue() != "identifier" ||
-			ast->getLeft()->getLeft() == nullptr) return nullptr;
-		string name = ast->getLeft()->getLeft()->getValue();
-		if (ast->getRight() == nullptr)
-			return nullptr;
-		string type = ast->getRight()->getValue();
 
-		return new Variable(type, name);
+	Variable(string type, string name, int addr, int size,
+		vector<pair<int, int> > dimsList, vector<int> lenList, int subpart) {
+		this->type = type;
+		this->name = name;
+		this->addr = addr;
+		this->size = size;
+		this->dimsList = dimsList;
+		this->lenList = lenList;
+		this->subpart = subpart;
 	}
+
 
 	string getType() {
 		return this->type;
@@ -132,7 +157,13 @@ public:
 		return this->name;
 	}
 
+	int getAddr() {
+		return this->addr;
+	}
 
+	int getSize() {
+		return this->size;
+	}
 
 	bool operator==(Variable other) {
 		return this->name == other.name;
@@ -140,70 +171,185 @@ public:
 
 };
 
+ostream& operator<<(ostream& out, Variable var) {
+	return cout << "( " << var.name << ", " << var.type << ", " << var.addr << ", " << var.size << ") ";
+}
 
-int getSize(Variable var) {
-	return 1; // TODO: genralize!
+
+/********************************************/
+/*********symbol table generation************/
+/********************************************/
+SymbolTable get_st(AST *p);
+string st_type(AST *p);
+string st_id(AST *p);
+
+
+class SymbolTable {
+public:
+	map<string, Variable> vars;
+
+public:
+
+	SymbolTable() : vars() {
+
+	}
+
+	static SymbolTable generateSymbolTable(AST* p) {
+		return get_st(p->getRight()->getLeft());
+	}
+
+	Variable& operator[](string id) {
+		return this->vars[id];
+	}
+
+};
+ostream& operator<<(ostream& out, SymbolTable st) {
+	for (auto a : st.vars) {
+		out << "(" << a.first << ", " << a.second << "), ";
+	}
+	return out << endl;
 }
 
 
 
-class SymbolTable {
-	vector<Variable> vars;
-	vector<int> addrs;
-	vector<int> sizes;
 
-public:
+/***********global variables*****************/
+SymbolTable st;
 
-	const vector<Variable>& getVars() {
-		return this->vars;
+
+
+string st_type(AST *p) {
+	if (p == nullptr)
+		return "";
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "var") {
+		return st_type(R);
+	}
+	else if (op == "int") {
+		return "int";
+	}
+	else if (op == "real") {
+		return "real";
+	}
+	else if (op == "bool") {
+		return "bool";
+	}
+	else if (op == "array") {
+		return "array of " + st_type(R);
 	}
 
-	const vector<int>& getAddrs() {
-		return this->addrs;
+	return "";
+}
+
+string st_id(AST *p) {
+	if (p == nullptr)
+		return "";
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "var") {
+		return st_id(L);
+	}
+	else if (op == "identifier") {
+		return L->getValue();
 	}
 
-	const vector<int>& getSizes() {
-		return this->sizes;
+	return nullptr;
+}
+
+int glob_addr = 5;
+int st_addr() {
+	int ret = glob_addr;
+	return glob_addr;
+}
+
+void st_arr(AST *p, vector<pair<int, int>>& list) {
+	if (p == nullptr)
+		return;
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "rangeList") {
+		st_arr(L, list);
+		st_arr(R, list);
+		return;
+	}
+	else if (op == "range") {
+		list.push_back(pair<int, int>(stoi(L->getLeft()->getValue()), stoi(R->getLeft()->getValue())));
+		return;
 	}
 
-public:
+}
 
-	SymbolTable() {
+SymbolTable st_var(AST *p) {
+	if (p == nullptr)
+		return st;
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
 
-	}
+	string name = st_id(L);
 
-	SymbolTable(vector<Variable> v, vector<int> add, vector<int> size) {
-		this->vars = v;
-		this->addrs = add;
-		this->sizes = size;
-	}
+	string type = st_type(R);
+	int addr = st_addr();
+	int size = size_of(type);
+	vector<pair<int, int>> rangeList;
+	vector<int> lengthList;
+	int subpart = 0;
+	if (type.find("array") == 0) {
+		int single_size = size;
 
-	static SymbolTable generateSymbolTable(AST* tree) {
-		vector<AST *> varns = tree->getByValue("var");
-
-		vector<Variable> vars;
-		vector<int> addrs;
-		vector<int> sizes;
-		int curAddr = 5;
-		int curSize = 1;
-
-		for (auto i = varns.begin(); i != varns.end(); i++) {
-			vars.push_back(*Variable::creatVar(*i));
-			addrs.push_back(curAddr);
-			curSize = getSize(vars.back());
-			sizes.push_back(curSize);
-			curAddr += curSize;
+		st_arr(L, rangeList);
+		for (auto r : rangeList) {
+			lengthList.push_back(r.second - r.first + 1);
+			int sum = std::accumulate(lengthList.begin(), lengthList.end(), 0);
+			size *= sum;
 		}
 
-		return *new SymbolTable(vars, addrs, sizes);
+		for (int i = 0; i < rangeList.size(); i++) {
+			int ds = 1;
+			for (int j = i + 1; j < rangeList.size(); j++) {
+				ds *= lengthList[j];
+			}
+			subpart += rangeList[i].first * single_size * ds;
+		}
 	}
 
-	int addrOfVar(string name) {
-		int idx = find(this->vars, Variable("NoneType", name));
-		return this->addrs[idx];
+	glob_addr += size;
+	
+
+	st[name] = Variable(type, name, addr, size, rangeList, lengthList, subpart);
+	return st;
+}
+
+SymbolTable get_st(AST *p) {
+	if (p == nullptr)
+		return st;
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "scope") {
+		get_st(L);
+		return st;
+	}
+	else if (op == "declarationsList") {
+		get_st(R);
+		get_st(L);
+		return st;
+	}
+	else if (op == "var") {
+		return st_var(p);
 	}
 
-};
+}
+
+
 
 
 
@@ -222,13 +368,13 @@ public:
 void code(AST *p);
 void codel(AST *p); // code left value
 void coder(AST *p); // code right value
+void codear(AST *p, string ar_name, int x_i=0); // array indexing
 void codec(AST *p, int l_switch); // code case
 int _codec(AST *p, int l_switch, int l_case); // private recursive function for cases
 
 
-/***********global variables*****************/
-SymbolTable st;
 
+/***********global variables*****************/
 int LAB = 0;
 int l_while_out = 0;
 int l_switch_end = 0;
@@ -345,6 +491,16 @@ void coder(AST *p) {
 		cout << "ind" << endl;
 		return;
 	}
+	else if (op == "array") {
+		codel(L);
+		codear(R, L->getLeft()->getValue());
+
+		return;
+	}
+	else if (op == "pointer") {
+		//TODO:
+		return;
+	}
 
 }
 
@@ -356,12 +512,29 @@ void codel(AST *p) {
 	AST *L = p->getLeft();
 
 	if (op == "identifier") {
-		cout << "ldc " << st.addrOfVar(L->getValue()) << endl;
+		cout << "ldc " << st[L->getValue()].getAddr() << endl;
 		return;
 	}
 
 }
 
+void codear(AST *p, string ar_name, int x_i) {
+	return; // the function crashs
+	if (p == nullptr)
+		return;
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "indexList") {
+		codear(L, ar_name, x_i + 1);
+		coder(R);
+		auto lenList = st[ar_name].lenList;
+		cout << "ixa " << accumulate(lenList.end() - x_i, lenList.end(), 1, multiplies<double>()) << endl;
+		return;
+	}
+
+}
 
 void codec(AST *p, int l_switch) {
 	int case_cnt = _codec(p, l_switch, 0);
@@ -486,7 +659,7 @@ int main()
 {
 	AST* ast;
 	SymbolTable symbolTable;
-	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree11.txt");
+	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree3.txt");
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);
