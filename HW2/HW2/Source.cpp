@@ -208,16 +208,31 @@ public:
 
 
 
+
+
+
+
+
+
+
+
 /********************************************/
 /************code generation*****************/
 /********************************************/
 void code(AST *p);
-void codel(AST *p);
-void coder(AST *p);
+void codel(AST *p); // code left value
+void coder(AST *p); // code right value
+void codec(AST *p, int l_switch); // code case
+int _codec(AST *p, int l_switch, int l_case); // private recursive function for cases
+
 
 /***********global variables*****************/
 SymbolTable st;
+
 int LAB = 0;
+int l_while_out = 0;
+int l_switch_end = 0;
+int l_case = 0;
 
 
 void coder(AST *p) {
@@ -249,6 +264,18 @@ void coder(AST *p) {
 		coder(L);
 		coder(R);
 		cout << "div" << endl;
+		return;
+	}
+	else if (op == "and") {
+		coder(L);
+		coder(R);
+		cout << "and" << endl;
+		return;
+	}
+	else if (op == "or") {
+		coder(L);
+		coder(R);
+		cout << "or" << endl;
 		return;
 	}
 	else if (op == "lessOrEquals") {
@@ -336,6 +363,36 @@ void codel(AST *p) {
 }
 
 
+void codec(AST *p, int l_switch) {
+	int case_cnt = _codec(p, l_switch, 0);
+	for (int i = case_cnt; i > 0; i--) {
+		cout << "ujp case_" << l_switch << "_" << i << endl;
+	}
+}
+
+int _codec(AST *p, int l_switch, int l_case) {
+	if (p == nullptr)
+		return l_case;
+	string op = p->getValue();
+	AST *R = p->getRight();
+	AST *L = p->getLeft();
+
+	if (op == "caseList") {
+		l_case = _codec(L, l_switch, l_case);
+		l_case = _codec(R, l_switch, l_case);
+		return l_case;
+	}
+	else if (op == "case") {
+		l_case++;
+		cout << "case_" << l_switch << "_" << l_case << ":" << endl;
+		code(R);
+		cout << "ujp " << "switch_end_" << l_switch << endl;
+		return l_case;
+	}
+
+
+}
+
 void code(AST *p) {
 	if (p == nullptr)
 		return;
@@ -387,16 +444,31 @@ void code(AST *p) {
 		int la = LAB;
 		LAB++;
 		int lb = LAB;
+		l_while_out = lb;
 		LAB++;
-		cout << "L" << la << ":" << endl;
+		cout << "while_" << la << ":" << endl;
 		coder(L);
-		cout << "fjp L" << lb << endl;
+		cout << "fjp while_out_" << lb << endl;
 		code(R);
-		cout << "ujp L" << la << endl;
-		cout << "L" << lb << ":" << endl;
+		cout << "ujp while_" << la << endl;
+		cout << "while_out_" << lb << ":" << endl;
 		return;
  	}
+	else if (op == "break") {
+		cout << "ujp while_out_" << l_while_out << endl;
+		return;
+	}
 	
+	else if (op == "switch") {
+		int la = LAB++;
+		coder(L);
+		cout << "neg" << endl;
+		cout << "ixj switch_end_" << la << endl;
+		codec(R, la); // codec - caseList
+		cout << "switch_end_" << la << ":" << endl;
+		return;
+	}
+
 
 }
 
@@ -414,7 +486,7 @@ int main()
 {
 	AST* ast;
 	SymbolTable symbolTable;
-	ifstream myfile("C:/Users/ykane/Downloads/TestHW1/tree8.txt");
+	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree11.txt");
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);
