@@ -182,6 +182,7 @@ ostream& operator<<(ostream& out, Variable var) {
 SymbolTable get_st(AST *p);
 string st_type(AST *p);
 string st_id(AST *p);
+void st_arr(AST *p, vector<pair<int, int>>& list);
 
 
 class SymbolTable {
@@ -216,6 +217,7 @@ ostream& operator<<(ostream& out, SymbolTable st) {
 /***********global variables*****************/
 SymbolTable st;
 
+string name_space = "";
 
 
 string st_type(AST *p) {
@@ -240,6 +242,9 @@ string st_type(AST *p) {
 	else if (op == "array") {
 		return "array of " + st_type(R);
 	}
+	else if (op == "record") {
+		return "record ..."; // TODO
+	}
 
 	return "";
 }
@@ -261,11 +266,6 @@ string st_id(AST *p) {
 	return nullptr;
 }
 
-int glob_addr = 5;
-int st_addr() {
-	int ret = glob_addr;
-	return glob_addr;
-}
 
 void st_arr(AST *p, vector<pair<int, int>>& list) {
 	if (p == nullptr)
@@ -283,8 +283,14 @@ void st_arr(AST *p, vector<pair<int, int>>& list) {
 		list.push_back(pair<int, int>(stoi(L->getLeft()->getValue()), stoi(R->getLeft()->getValue())));
 		return;
 	}
+	else if (op == "array") {
+		st_arr(L, list);
+		return;
+	}
 
 }
+
+int glob_addr = 5;
 
 SymbolTable st_var(AST *p) {
 	if (p == nullptr)
@@ -296,32 +302,40 @@ SymbolTable st_var(AST *p) {
 	string name = st_id(L);
 
 	string type = st_type(R);
-	int addr = st_addr();
+	int addr = glob_addr;
+	if (name_space != "") {
+		addr -= st[name_space.substr(0, name_space.length() - 1)].addr;
+	}
 	int size = size_of(type);
+
+
+	if (type.find("record") == 0) {
+		name_space += name + " ";
+		get_st(R->getLeft());
+		name_space = name_space.substr(0, name_space.find_last_of(" ") - 1);
+	}
+
 	vector<pair<int, int>> rangeList;
 	vector<int> lengthList;
 	int subpart = 0;
 	if (type.find("array") == 0) {
 		int single_size = size;
 
-		st_arr(L, rangeList);
+		st_arr(R, rangeList);
 		for (auto r : rangeList) {
 			lengthList.push_back(r.second - r.first + 1);
-			int sum = std::accumulate(lengthList.begin(), lengthList.end(), 0);
-			size *= sum;
 		}
 
+		size = accumulate(lengthList.begin(), lengthList.end(), size, multiplies<double>());
+
 		for (int i = 0; i < rangeList.size(); i++) {
-			int ds = 1;
-			for (int j = i + 1; j < rangeList.size(); j++) {
-				ds *= lengthList[j];
-			}
-			subpart += rangeList[i].first * single_size * ds;
+			subpart += rangeList[i].first * single_size *
+				accumulate(lengthList.begin() + i + 1, lengthList.end(), 1, multiplies<double>());
 		}
 	}
 
 	glob_addr += size;
-	
+	name = name_space + name;
 
 	st[name] = Variable(type, name, addr, size, rangeList, lengthList, subpart);
 	return st;
@@ -339,8 +353,8 @@ SymbolTable get_st(AST *p) {
 		return st;
 	}
 	else if (op == "declarationsList") {
-		get_st(R);
 		get_st(L);
+		get_st(R);
 		return st;
 	}
 	else if (op == "var") {
@@ -366,7 +380,7 @@ SymbolTable get_st(AST *p) {
 /************code generation*****************/
 /********************************************/
 void code(AST *p);
-void codel(AST *p); // code left value
+string codel(AST *p); // code left value
 void coder(AST *p); // code right value
 void codear(AST *p, string ar_name, int x_i=0); // array indexing
 void codec(AST *p, int l_switch); // code case
@@ -379,6 +393,8 @@ int LAB = 0;
 int l_while_out = 0;
 int l_switch_end = 0;
 int l_case = 0;
+
+string l_break = "";
 
 
 void coder(AST *p) {
@@ -494,7 +510,8 @@ void coder(AST *p) {
 	else if (op == "array") {
 		codel(L);
 		codear(R, L->getLeft()->getValue());
-
+		cout << "dec " << st[L->getLeft()->getValue()].subpart << endl;
+		cout << "ind" << endl;
 		return;
 	}
 	else if (op == "pointer") {
@@ -504,7 +521,7 @@ void coder(AST *p) {
 
 }
 
-void codel(AST *p) {
+string codel(AST *p) {
 	if (p == nullptr)
 		return;
 	string op = p->getValue();
@@ -515,11 +532,21 @@ void codel(AST *p) {
 		cout << "ldc " << st[L->getValue()].getAddr() << endl;
 		return;
 	}
+	else if (op == "array") {
+		codel(L);
+		codear(R, L->getLeft()->getValue());
+		cout << "dec " << st[L->getLeft()->getValue()].subpart << endl;
+		return;
+	}
+	else if (op == "record") {
+		name_space = codel(L);
+		cout << "inc " << st[name_space + L->getLeft()->getValue()].addr << endl;
+		return 
+	}
 
 }
 
 void codear(AST *p, string ar_name, int x_i) {
-	return; // the function crashs
 	if (p == nullptr)
 		return;
 	string op = p->getValue();
@@ -618,6 +645,8 @@ void code(AST *p) {
 		LAB++;
 		int lb = LAB;
 		l_while_out = lb;
+		string prev_l_break = l_break;
+		l_break = "while";
 		LAB++;
 		cout << "while_" << la << ":" << endl;
 		coder(L);
@@ -625,20 +654,30 @@ void code(AST *p) {
 		code(R);
 		cout << "ujp while_" << la << endl;
 		cout << "while_out_" << lb << ":" << endl;
+		l_break = prev_l_break;
 		return;
  	}
 	else if (op == "break") {
-		cout << "ujp while_out_" << l_while_out << endl;
+		if (l_break == "while") {
+			cout << "ujp while_out_" << l_while_out << endl;
+		}
+		else if (l_break == "switch") {
+			cout << "ujp switch_end_" << l_switch_end << endl;
+		}
 		return;
 	}
 	
 	else if (op == "switch") {
 		int la = LAB++;
+		l_switch_end = la;
+		string prev_l_reak = l_break;
+		l_break = "switch";
 		coder(L);
 		cout << "neg" << endl;
 		cout << "ixj switch_end_" << la << endl;
 		codec(R, la); // codec - caseList
 		cout << "switch_end_" << la << ":" << endl;
+		l_break = prev_l_reak;
 		return;
 	}
 
@@ -659,12 +698,13 @@ int main()
 {
 	AST* ast;
 	SymbolTable symbolTable;
-	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree3.txt");
+	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree6.txt");
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);
 		myfile.close();
 		symbolTable = SymbolTable::generateSymbolTable(ast);
+		cout << symbolTable;
 		generatePCode(ast, symbolTable);
 	}
 	else cout << "Unable to open file";
