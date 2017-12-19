@@ -724,7 +724,7 @@ int main()
 {
 	AST* ast;
 	SymbolTable symbolTable;
-	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree9.txt");
+	ifstream myfile("C:/Users/ykane/Downloads/TestsHW2/tree3.txt");
 	if (myfile.is_open())
 	{
 		ast = AST::createAST(myfile);

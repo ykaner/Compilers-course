@@ -1,0 +1,12 @@
+# depslib dependency file v1.0
+1512627399 source:c:\users\ykane\documents\compilers\hw2_codeblocks\hw2_cb\hw2.cpp
+	<iostream>
+	<string>
+	<fstream>
+	<vector>
+	<stack>
+	<algorithm>
+	<map>
+	<set>
+	<numeric>
+
